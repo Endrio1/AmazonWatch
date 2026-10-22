@@ -1,0 +1,73 @@
+services:
+  postgis:
+    image: postgis/postgis:16-3.4
+    container_name: amazonwatch_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-amazonwatch}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-amazonwatch}
+      POSTGRES_DB: ${POSTGRES_DB:-amazonwatch}
+    ports:
+      - "${DB_PORT:-5433}:5432"
+    volumes:
+      - postgis_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U amazonwatch -d amazonwatch"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: amazonwatch_api
+    restart: unless-stopped
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2"
+    depends_on:
+      postgis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-amazonwatch}:${POSTGRES_PASSWORD:-amazonwatch}@postgis:5432/${POSTGRES_DB:-amazonwatch}
+      MEDIA_DIR: /data/media
+      CORS_ORIGINS: '["http://localhost:3000","http://localhost:5173","http://localhost"]'
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - media_data:/data/media
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: amazonwatch_worker
+    restart: unless-stopped
+    command: python -m app.worker
+    depends_on:
+      postgis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-amazonwatch}:${POSTGRES_PASSWORD:-amazonwatch}@postgis:5432/${POSTGRES_DB:-amazonwatch}
+      MEDIA_DIR: /data/media
+      PIPELINE_INTERVAL_MINUTES: "5"
+    volumes:
+      - media_data:/data/media
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: amazonwatch_frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - api
+
+volumes:
+  postgis_data:
+  media_data:
