@@ -2,6 +2,7 @@
 
 Sistema de monitoramento em tempo quase real que correlaciona **nuvens de fumaça** e os **incêndios de onde elas se originaram** na **Amazônia Legal**, utilizando dados do **BDQueimadas/INPE** e **NOAA GOES-19**.
 
+Endrio Agassi Bernardes De Almeida
 ---
 
 ## 🧭 Metodologia e Fontes de Dados
