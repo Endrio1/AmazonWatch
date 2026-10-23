@@ -34,6 +34,11 @@ export const App: React.FC = () => {
   const [frames, setFrames] = useState<SatelliteFrame[]>([]);
   const [selectedPlume, setSelectedPlume] = useState<PlumeDetail | null>(null);
   const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
+  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
+
+  // Cache em memória para troca instantânea de scans durante a reprodução
+  const plumesCache = useRef<Map<string, any>>(new Map());
+  const hotspotsCache = useRef<Map<string, any>>(new Map());
 
   // Estados das camadas
   const [showSatellite, setShowSatellite] = useState<boolean>(true);
@@ -45,23 +50,30 @@ export const App: React.FC = () => {
   const loadInitialData = useCallback(async () => {
     try {
       const [s, reg, times, frs] = await Promise.all([
-        fetchStats(24).catch(() => null),
+        fetchStats(6).catch(() => null),
         fetchRegion().catch(() => null),
-        fetchTimeline().catch(() => []),
+        fetchTimeline(6).catch(() => []),
         fetchFrames().catch(() => []),
       ]);
 
       if (s) setStats(s);
       if (reg) setRegionGeoJSON(reg);
-      if (frs) setFrames(frs);
+      if (frs && frs.length > 0) {
+        setFrames(frs);
+        // Pré-carrega todas as imagens de satélite na memória do navegador para troca sem atraso
+        frs.forEach((f) => {
+          const img = new Image();
+          img.src = f.image_url;
+        });
+      }
 
       if (times && times.length > 0) {
         // Focos e plumas são carregados pelo efeito que observa o scan atual
         setTimeline(times);
         setCurrentIdx(times.length - 1); // Último scan (mais recente)
       } else {
-        // Ainda não há scans no banco: mostra plumas gerais e focos das últimas 24h
-        const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        // Ainda não há scans no banco: mostra plumas gerais e focos das últimas 6h
+        const since = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
         const [generalPlumes, hots] = await Promise.all([
           fetchPlumes().catch(() => null),
           fetchHotspots(since).catch(() => null),
@@ -81,38 +93,80 @@ export const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [loadInitialData]);
 
-  // 2. Atualiza plumas e focos quando o scan selecionado na timeline muda
+  // 2. Atualiza plumas e focos com cache instantâneo e pré-busca contínua
   const currentScanTime = timeline[currentIdx];
   useEffect(() => {
     if (!currentScanTime) return;
-    let cancelled = false; // descarta respostas atrasadas durante a reprodução
+    let cancelled = false;
 
     const scanTs = new Date(currentScanTime).getTime();
     const start = new Date(scanTs - HOTSPOT_WINDOW_BEFORE_MS).toISOString();
     const end = new Date(scanTs + HOTSPOT_WINDOW_AFTER_MS).toISOString();
+    const hKey = `${start}_${end}`;
 
-    fetchPlumes(currentScanTime)
-      .then((data) => !cancelled && setPlumesGeoJSON(data))
-      .catch((err) => console.error("Erro ao atualizar plumas do scan:", err));
-    fetchHotspots(start, end)
-      .then((data) => !cancelled && setHotspotsGeoJSON(data))
-      .catch((err) => console.error("Erro ao atualizar focos do scan:", err));
+    // 1. Plumas (usa cache em memória para resposta instantânea)
+    if (plumesCache.current.has(currentScanTime)) {
+      setPlumesGeoJSON(plumesCache.current.get(currentScanTime));
+    } else {
+      fetchPlumes(currentScanTime)
+        .then((data) => {
+          if (!cancelled) {
+            plumesCache.current.set(currentScanTime, data);
+            setPlumesGeoJSON(data);
+          }
+        })
+        .catch((err) => console.error("Erro ao atualizar plumas do scan:", err));
+    }
+
+    // 2. Focos (usa cache em memória)
+    if (hotspotsCache.current.has(hKey)) {
+      setHotspotsGeoJSON(hotspotsCache.current.get(hKey));
+    } else {
+      fetchHotspots(start, end)
+        .then((data) => {
+          if (!cancelled) {
+            hotspotsCache.current.set(hKey, data);
+            setHotspotsGeoJSON(data);
+          }
+        })
+        .catch((err) => console.error("Erro ao atualizar focos do scan:", err));
+    }
+
+    // 3. Pré-busca dos próximos 2 scans para garantir fluidez perfeita a 60 FPS
+    if (isPlaying && timeline.length > 0) {
+      for (let offset = 1; offset <= 2; offset++) {
+        const nextIdx = (currentIdx + offset) % timeline.length;
+        const nextTime = timeline[nextIdx];
+        if (nextTime && !plumesCache.current.has(nextTime)) {
+          fetchPlumes(nextTime)
+            .then((data) => plumesCache.current.set(nextTime, data))
+            .catch(() => {});
+        }
+        if (nextTime) {
+          const nTs = new Date(nextTime).getTime();
+          const nStart = new Date(nTs - HOTSPOT_WINDOW_BEFORE_MS).toISOString();
+          const nEnd = new Date(nTs + HOTSPOT_WINDOW_AFTER_MS).toISOString();
+          const nKey = `${nStart}_${nEnd}`;
+          if (!hotspotsCache.current.has(nKey)) {
+            fetchHotspots(nStart, nEnd)
+              .then((data) => hotspotsCache.current.set(nKey, data))
+              .catch(() => {});
+          }
+        }
+      }
+    }
 
     return () => {
       cancelled = true;
     };
-    // `timeline` entra nas dependências para recarregar no refresh periódico
-  }, [currentScanTime, timeline]);
+  }, [currentScanTime, timeline, currentIdx, isPlaying]);
 
   // Quadro de satélite correspondente ao scan atual
   const currentFrame = React.useMemo(() => {
     if (frames.length === 0) return null;
-    // Sem timeline: usa o quadro mais recente (a API ordena por scan_time desc)
     if (!currentScanTime) return frames[0];
 
     const targetTs = new Date(currentScanTime).getTime();
-    // Frame mais próximo dentro da tolerância; se nenhum existir, não exibe
-    // imagem de outro horário (evita fumaça e fundo dessincronizados)
     let best: SatelliteFrame | null = null;
     let minDiff = Infinity;
 
@@ -123,16 +177,18 @@ export const App: React.FC = () => {
         best = f;
       }
     }
-    return best;
+    // Retorna o frame mais próximo dentro da tolerância, ou o frame mais recente disponível
+    return best || frames[0] || null;
   }, [frames, currentScanTime]);
 
-  // 3. Reprodução automática da linha do tempo
+  // 3. Reprodução automática fluida com taxa de quadros e intervalo otimizados
   const timerRef = useRef<number | null>(null);
   useEffect(() => {
     if (isPlaying && timeline.length > 1) {
+      const intervalMs = Math.round(650 / playbackSpeed);
       timerRef.current = window.setInterval(() => {
         setCurrentIdx((prev) => (prev + 1) % timeline.length);
-      }, 2400);
+      }, intervalMs);
     } else if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
@@ -140,7 +196,16 @@ export const App: React.FC = () => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [isPlaying, timeline.length]);
+  }, [isPlaying, timeline.length, playbackSpeed]);
+
+  const handleCycleSpeed = () => {
+    setPlaybackSpeed((prev) => {
+      if (prev === 0.5) return 1;
+      if (prev === 1) return 1.5;
+      if (prev === 1.5) return 2;
+      return 0.5;
+    });
+  };
 
   // 4. Seleção de uma pluma para inspeção
   const handleSelectPlume = async (plumeId: number) => {
@@ -206,6 +271,8 @@ export const App: React.FC = () => {
         }}
         isPlaying={isPlaying}
         onTogglePlay={() => setIsPlaying(!isPlaying)}
+        playbackSpeed={playbackSpeed}
+        onCycleSpeed={handleCycleSpeed}
       />
     </div>
   );

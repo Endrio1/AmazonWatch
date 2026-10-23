@@ -84,7 +84,7 @@ def list_plumes(
 
 @router.get("/timeline", response_model=list[datetime])
 def list_timeline_timestamps(
-    hours: Annotated[int, Query(ge=1, le=168)] = 24,
+    hours: Annotated[int, Query(ge=1, le=168)] = 6,
     db: Session = Depends(get_db),
 ) -> list[datetime]:
     """Retorna os horários disponíveis com scans de fumaça para a linha do tempo."""

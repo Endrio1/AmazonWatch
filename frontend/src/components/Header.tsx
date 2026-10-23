@@ -50,7 +50,7 @@ export const Header: React.FC<HeaderProps> = ({
             <Flame size={18} color="#ef4444" />
           </div>
           <div className="metric-data">
-            <span className="metric-label">Focos 24h</span>
+            <span className="metric-label">Focos 6h</span>
             <span className="metric-val">{stats?.total_hotspots?.toLocaleString() ?? "—"}</span>
           </div>
         </div>

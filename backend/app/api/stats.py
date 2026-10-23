@@ -16,7 +16,7 @@ router = APIRouter(prefix="/stats", tags=["stats"])
 
 @router.get("", response_model=StatsSummary)
 def get_stats(
-    hours: Annotated[int, Query(description="Janela de tempo em horas", ge=1, le=168)] = 24,
+    hours: Annotated[int, Query(description="Janela de tempo em horas", ge=1, le=168)] = 6,
     db: Session = Depends(get_db),
 ) -> StatsSummary:
     """Calcula estatísticas agregadas de focos, plumas e origens na janela solicitada."""

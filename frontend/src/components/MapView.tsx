@@ -36,6 +36,8 @@ export const MapView: React.FC<MapViewProps> = ({
   // Referências para camadas dinâmicas
   const regionLayerRef = useRef<L.GeoJSON | null>(null);
   const satelliteOverlayRef = useRef<L.ImageOverlay | null>(null);
+  const previousOverlayRef = useRef<L.ImageOverlay | null>(null);
+  const canvasRendererRef = useRef<L.Canvas | null>(null);
   const plumesLayerRef = useRef<L.GeoJSON | null>(null);
   const hotspotsLayerRef = useRef<L.LayerGroup | null>(null);
   const connectorLinesRef = useRef<L.LayerGroup | null>(null);
@@ -83,6 +85,7 @@ export const MapView: React.FC<MapViewProps> = ({
     // Controles de zoom no canto inferior direito
     L.control.zoom({ position: "bottomright" }).addTo(map);
 
+    canvasRendererRef.current = L.canvas({ padding: 0.5 });
     hotspotsLayerRef.current = L.layerGroup().addTo(map);
     connectorLinesRef.current = L.layerGroup().addTo(map);
 
@@ -117,26 +120,73 @@ export const MapView: React.FC<MapViewProps> = ({
     }
   }, [regionGeoJSON]);
 
-  // 2. Sobreposição do quadro de satélite True Color (DSAT/INPE)
+  // 2. Sobreposição do quadro de satélite True Color com Crossfade suave (sem piscar)
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    if (satelliteOverlayRef.current) {
-      map.removeLayer(satelliteOverlayRef.current);
-      satelliteOverlayRef.current = null;
+    if (!showSatellite || !currentFrame) {
+      if (satelliteOverlayRef.current) {
+        map.removeLayer(satelliteOverlayRef.current);
+        satelliteOverlayRef.current = null;
+      }
+      if (previousOverlayRef.current) {
+        map.removeLayer(previousOverlayRef.current);
+        previousOverlayRef.current = null;
+      }
+      return;
     }
 
-    if (showSatellite && currentFrame) {
-      const bounds: L.LatLngBoundsExpression = [
-        [currentFrame.south, currentFrame.west],
-        [currentFrame.north, currentFrame.east],
-      ];
-      satelliteOverlayRef.current = L.imageOverlay(currentFrame.image_url, bounds, {
-        opacity: 0.95,
-        interactive: false,
-        pane: "satellite-pane",
-      }).addTo(map);
+    // Se já é a mesma imagem, não recria
+    if (
+      satelliteOverlayRef.current &&
+      (satelliteOverlayRef.current as any)._aw_frame_id === currentFrame.id
+    ) {
+      return;
+    }
+
+    const bounds: L.LatLngBoundsExpression = [
+      [currentFrame.south, currentFrame.west],
+      [currentFrame.north, currentFrame.east],
+    ];
+
+    // Guarda a camada atual para fazer o crossfade
+    if (satelliteOverlayRef.current) {
+      if (previousOverlayRef.current) {
+        map.removeLayer(previousOverlayRef.current);
+      }
+      previousOverlayRef.current = satelliteOverlayRef.current;
+    }
+
+    const newOverlay = L.imageOverlay(currentFrame.image_url, bounds, {
+      opacity: 0.0,
+      className: "satellite-crossfade",
+      interactive: false,
+      pane: "satellite-pane",
+    }).addTo(map);
+
+    (newOverlay as any)._aw_frame_id = currentFrame.id;
+    satelliteOverlayRef.current = newOverlay;
+
+    // Quando a imagem carregar, faz o crossfade suave
+    const onImgLoad = () => {
+      newOverlay.setOpacity(0.95);
+      if (previousOverlayRef.current) {
+        const oldLayer = previousOverlayRef.current;
+        previousOverlayRef.current = null;
+        setTimeout(() => {
+          if (map.hasLayer(oldLayer)) {
+            map.removeLayer(oldLayer);
+          }
+        }, 320);
+      }
+    };
+
+    const imgEl = newOverlay.getElement();
+    if (imgEl && (imgEl as HTMLImageElement).complete) {
+      onImgLoad();
+    } else {
+      newOverlay.on("load", onImgLoad);
     }
   }, [showSatellite, currentFrame]);
 
@@ -211,6 +261,7 @@ export const MapView: React.FC<MapViewProps> = ({
         fillColor: isOrigin ? "#dc2626" : "#ea580c",
         fillOpacity: isOrigin ? 0.95 : 0.7,
         weight: isOrigin ? 2 : 1,
+        renderer: canvasRendererRef.current || undefined,
       });
 
       marker.bindTooltip(

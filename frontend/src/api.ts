@@ -2,7 +2,7 @@ import type { PlumeDetail, SatelliteFrame, StatsSummary } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
-export async function fetchStats(hours: number = 24): Promise<StatsSummary> {
+export async function fetchStats(hours: number = 6): Promise<StatsSummary> {
   const res = await fetch(`${API_BASE}/stats?hours=${hours}`);
   if (!res.ok) throw new Error("Falha ao carregar estatísticas");
   return res.json();
@@ -14,8 +14,8 @@ export async function fetchRegion(): Promise<any> {
   return res.json();
 }
 
-export async function fetchTimeline(): Promise<string[]> {
-  const res = await fetch(`${API_BASE}/plumes/timeline?hours=24`);
+export async function fetchTimeline(hours: number = 6): Promise<string[]> {
+  const res = await fetch(`${API_BASE}/plumes/timeline?hours=${hours}`);
   if (!res.ok) throw new Error("Falha ao carregar linha do tempo");
   return res.json();
 }

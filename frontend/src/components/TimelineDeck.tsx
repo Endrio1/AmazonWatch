@@ -7,6 +7,8 @@ interface TimelineDeckProps {
   onSelectIndex: (idx: number) => void;
   isPlaying: boolean;
   onTogglePlay: () => void;
+  playbackSpeed: number;
+  onCycleSpeed: () => void;
 }
 
 export const TimelineDeck: React.FC<TimelineDeckProps> = ({
@@ -15,6 +17,8 @@ export const TimelineDeck: React.FC<TimelineDeckProps> = ({
   onSelectIndex,
   isPlaying,
   onTogglePlay,
+  playbackSpeed,
+  onCycleSpeed,
 }) => {
   if (timeline.length === 0) return null;
 
@@ -68,6 +72,14 @@ export const TimelineDeck: React.FC<TimelineDeckProps> = ({
             title="Próximo scan (+10 min)"
           >
             <SkipForward size={16} />
+          </button>
+
+          <button
+            className="btn-speed"
+            onClick={onCycleSpeed}
+            title="Velocidade da animação (0.5x, 1x, 2x)"
+          >
+            {playbackSpeed}x
           </button>
         </div>
 

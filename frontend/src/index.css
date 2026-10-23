@@ -448,6 +448,39 @@ html, body, #root {
   transition: all 0.2s;
 }
 
+.btn-speed {
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-speed:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+/* Transições fluidas para overlays de satélite (Crossfade) e vetores */
+.satellite-crossfade {
+  transition: opacity 0.35s ease-in-out !important;
+  will-change: opacity;
+}
+
+.leaflet-pane.leaflet-satellite-pane-pane {
+  transition: opacity 0.3s ease;
+}
+
+.custom-leaflet-tooltip {
+  pointer-events: none;
+}
+
 .btn-play:hover {
   transform: scale(1.05);
   border-color: #38bdf8;
