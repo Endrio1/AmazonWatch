@@ -18,7 +18,13 @@ class Settings(BaseSettings):
     # CORS (útil ao rodar o frontend com `npm run dev`)
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:8080"]
 
+    # Autenticação e Segurança JWT
+    jwt_secret: str = "amazonwatch_super_secret_jwt_key_2026_x89f4"
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 10080
+
     # --- Fontes de dados
+
     bdqueimadas_base_url: str = "https://dataserver-coids.inpe.br/queimadas/queimadas/focos/csv/10min/"
     goes_bucket_url: str = "https://noaa-goes19.s3.amazonaws.com"
     goes_adp_product: str = "ABI-L2-ADPF"

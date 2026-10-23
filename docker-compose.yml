@@ -33,10 +33,15 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-amazonwatch}:${POSTGRES_PASSWORD:-amazonwatch}@postgis:5432/${POSTGRES_DB:-amazonwatch}
       MEDIA_DIR: /data/media
       CORS_ORIGINS: '["http://localhost:3000","http://localhost:5173","http://localhost"]'
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: ${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-10080}
+
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
       - media_data:/data/media
+      - ./backend:/app
 
   worker:
     build:
@@ -54,8 +59,13 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-amazonwatch}:${POSTGRES_PASSWORD:-amazonwatch}@postgis:5432/${POSTGRES_DB:-amazonwatch}
       MEDIA_DIR: /data/media
       PIPELINE_INTERVAL_MINUTES: "5"
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: ${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-10080}
     volumes:
       - media_data:/data/media
+      - ./backend:/app
+
 
   frontend:
     build:
