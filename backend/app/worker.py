@@ -103,7 +103,17 @@ def run_pipeline(settings: Settings | None = None, region: Region | None = None)
         except Exception as e:
             log.error("Erro na reassociação: %s", e, exc_info=True)
 
-    # 5. Limpeza de retenção
+        # 5. Avaliação de alertas para usuários (raio 50km)
+        try:
+            from app.processing.alerts_engine import evaluate_user_alerts
+            with session_scope() as db:
+                n_alerts = evaluate_user_alerts(db)
+            if n_alerts > 0:
+                log.info("Avaliação de alertas: %d novas notificações geradas", n_alerts)
+        except Exception as e:
+            log.error("Erro na avaliação de alertas: %s", e, exc_info=True)
+
+    # 6. Limpeza de retenção
     try:
         cleanup_old_data(settings)
     except Exception as e:
@@ -111,6 +121,7 @@ def run_pipeline(settings: Settings | None = None, region: Region | None = None)
 
     duration = (datetime.now(timezone.utc) - t0).total_seconds()
     log.info("Ciclo do pipeline finalizado em %.1fs.", duration)
+
 
 
 def main():

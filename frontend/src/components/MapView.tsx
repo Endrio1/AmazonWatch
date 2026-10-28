@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import type { FocusRequest, PlumeDetail, SatelliteFrame } from "../types";
+import type { FocusRequest, MonitoredLocation, PlumeDetail, SatelliteFrame } from "../types";
 
 interface MapViewProps {
   regionGeoJSON: any;
@@ -14,6 +14,8 @@ interface MapViewProps {
   showPlumes: boolean;
   showHotspots: boolean;
   showOriginsOnly: boolean;
+  userLocations?: MonitoredLocation[];
+  flyToLocation?: { lat: number; lon: number; nonce: number } | null;
   onSelectPlume: (plumeId: number) => void;
 }
 
@@ -28,6 +30,8 @@ export const MapView: React.FC<MapViewProps> = ({
   showPlumes,
   showHotspots,
   showOriginsOnly,
+  userLocations = [],
+  flyToLocation,
   onSelectPlume,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -41,6 +45,8 @@ export const MapView: React.FC<MapViewProps> = ({
   const plumesLayerRef = useRef<L.GeoJSON | null>(null);
   const hotspotsLayerRef = useRef<L.LayerGroup | null>(null);
   const connectorLinesRef = useRef<L.LayerGroup | null>(null);
+  const userLocationsLayerRef = useRef<L.LayerGroup | null>(null);
+
 
   // Inicialização do mapa Leaflet
   useEffect(() => {
@@ -88,6 +94,7 @@ export const MapView: React.FC<MapViewProps> = ({
     canvasRendererRef.current = L.canvas({ padding: 0.5 });
     hotspotsLayerRef.current = L.layerGroup().addTo(map);
     connectorLinesRef.current = L.layerGroup().addTo(map);
+    userLocationsLayerRef.current = L.layerGroup().addTo(map);
 
     mapRef.current = map;
 
@@ -332,5 +339,62 @@ export const MapView: React.FC<MapViewProps> = ({
     });
   }, [focusRequest]);
 
+  // 7. Renderização dos locais monitorados pelo usuário (raio 50km)
+  useEffect(() => {
+    const group = userLocationsLayerRef.current;
+    if (!group) return;
+    group.clearLayers();
+
+    userLocations.forEach((loc) => {
+      // Círculo translúcido com raio de 50 km (50.000m)
+      const circle = L.circle([loc.lat, loc.lon], {
+        radius: (loc.radius_km || 50.0) * 1000,
+        color: "#06b6d4",
+        weight: 1.5,
+        opacity: 0.8,
+        fillColor: "#0891b2",
+        fillOpacity: 0.12,
+        dashArray: "6, 6",
+      });
+
+      circle.bindTooltip(
+        `<strong>📍 ${loc.label}</strong><br/>Raio de Monitoramento: ${loc.radius_km || 50} km<br/>Vigilância ativa para Incêndios e Fumaça`,
+        { sticky: true }
+      );
+
+      // Marcador central com radar
+      const centerMarker = L.circleMarker([loc.lat, loc.lon], {
+        radius: 6,
+        color: "#ffffff",
+        fillColor: "#06b6d4",
+        fillOpacity: 1,
+        weight: 2,
+      });
+
+      centerMarker.bindPopup(
+        `<div style="color: #0f172a; font-family: sans-serif;">
+          <h4 style="margin: 0 0 4px 0; font-size: 14px;">📍 ${loc.label}</h4>
+          <p style="margin: 0; font-size: 12px; color: #475569;">
+            Raio de alerta: <strong>${loc.radius_km || 50} km</strong><br/>
+            Coordenadas: ${loc.lat.toFixed(4)}, ${loc.lon.toFixed(4)}
+          </p>
+        </div>`
+      );
+
+      group.addLayer(circle);
+      group.addLayer(centerMarker);
+    });
+  }, [userLocations]);
+
+  // 8. Foco em local monitorado
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !flyToLocation) return;
+    map.flyTo([flyToLocation.lat, flyToLocation.lon], 8.5, {
+      duration: 1,
+    });
+  }, [flyToLocation]);
+
   return <div ref={mapContainerRef} className="map-viewport" id="amazonwatch-map" />;
 };
+

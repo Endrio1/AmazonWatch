@@ -63,3 +63,42 @@ export interface StatsSummary {
   active_origins: number;
   latest_scan_time: string | null;
 }
+
+export interface User {
+  id: number;
+  email: string;
+  name: string;
+  created_at: string;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  user: User;
+}
+
+export interface MonitoredLocation {
+  id: number;
+  user_id: number;
+  label: string;
+  lat: number;
+  lon: number;
+  radius_km: number;
+  notify_fire: boolean;
+  notify_smoke: boolean;
+  created_at: string;
+}
+
+export interface AlertNotification {
+  id: number;
+  location_id: number;
+  location_label?: string;
+  alert_type: "FIRE" | "SMOKE";
+  title: string;
+  message: string;
+  distance_km: number;
+  entity_id: number;
+  read_at: string | null;
+  created_at: string;
+}
+

@@ -1,6 +1,16 @@
 import React from "react";
-import { Flame, Wind, Layers, Activity, Eye, EyeOff } from "lucide-react";
-import type { StatsSummary } from "../types";
+import {
+  Flame,
+  Wind,
+  Layers,
+  Activity,
+  Eye,
+  EyeOff,
+  Bell,
+  User as UserIcon,
+  LogOut,
+} from "lucide-react";
+import type { StatsSummary, User } from "../types";
 
 interface HeaderProps {
   stats: StatsSummary | null;
@@ -12,6 +22,11 @@ interface HeaderProps {
   onToggleHotspots: () => void;
   showOriginsOnly: boolean;
   onToggleOriginsOnly: () => void;
+  user: User | null;
+  unreadAlertsCount: number;
+  onOpenAlerts: () => void;
+  onOpenAuth: () => void;
+  onLogout: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -24,6 +39,11 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleHotspots,
   showOriginsOnly,
   onToggleOriginsOnly,
+  user,
+  unreadAlertsCount,
+  onOpenAlerts,
+  onOpenAuth,
+  onLogout,
 }) => {
   return (
     <header className="top-header">
@@ -88,7 +108,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Layer Toggles */}
+      {/* Layer Toggles & User Alerts Area */}
       <div className="header-controls">
         <button
           className={`btn-control ${showSatellite ? "active" : ""}`}
@@ -125,7 +145,48 @@ export const Header: React.FC<HeaderProps> = ({
           <Activity size={16} />
           Apenas Origens
         </button>
+
+        <div className="header-divider" />
+
+        {/* Alertas (Raio 50km) */}
+        <button
+          className={`btn-alert-bell ${unreadAlertsCount > 0 ? "has-unread" : ""}`}
+          onClick={onOpenAlerts}
+          title="Alertas de Fogo e Fumaça a 50 km"
+        >
+          <Bell size={17} />
+          {unreadAlertsCount > 0 && (
+            <span className="bell-badge">{unreadAlertsCount > 99 ? "99+" : unreadAlertsCount}</span>
+          )}
+        </button>
+
+        {/* Usuário / Cadastro */}
+        {user ? (
+          <div className="user-profile-menu">
+            <button
+              className="btn-user-profile"
+              onClick={onOpenAlerts}
+              title={`Conectado como ${user.name}`}
+            >
+              <UserIcon size={15} />
+              <span className="user-name-label">{user.name.split(" ")[0]}</span>
+            </button>
+            <button
+              className="btn-logout"
+              onClick={onLogout}
+              title="Encerrar sessão"
+            >
+              <LogOut size={14} />
+            </button>
+          </div>
+        ) : (
+          <button className="btn-auth-trigger" onClick={onOpenAuth}>
+            <UserIcon size={15} />
+            <span>Cadastrar / Entrar</span>
+          </button>
+        )}
       </div>
     </header>
   );
 };
+

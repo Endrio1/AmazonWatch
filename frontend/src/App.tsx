@@ -4,6 +4,8 @@ import { MapView } from "./components/MapView";
 import { TimelineDeck } from "./components/TimelineDeck";
 import { PlumeInspector } from "./components/PlumeInspector";
 import { Legend } from "./components/Legend";
+import { AuthModal } from "./components/AuthModal";
+import { AlertsDrawer } from "./components/AlertsDrawer";
 import {
   fetchStats,
   fetchRegion,
@@ -12,11 +14,23 @@ import {
   fetchHotspots,
   fetchFrames,
   fetchPlumeDetail,
+  fetchCurrentUser,
+  fetchUserLocations,
+  fetchUserAlerts,
+  clearAuthToken,
+  getAuthToken,
 } from "./api";
-import type { FocusRequest, PlumeDetail, SatelliteFrame, StatsSummary } from "./types";
+import type {
+  AlertNotification,
+  FocusRequest,
+  MonitoredLocation,
+  PlumeDetail,
+  SatelliteFrame,
+  StatsSummary,
+  User,
+} from "./types";
 
 // Janela de focos exibida para um scan — igual à janela da associação no backend
-// (assoc_window_before_hours / assoc_window_after_minutes).
 const HOTSPOT_WINDOW_BEFORE_MS = 6 * 60 * 60 * 1000;
 const HOTSPOT_WINDOW_AFTER_MS = 10 * 60 * 1000;
 // Tolerância máxima entre o scan de fumaça e o quadro de satélite exibido
@@ -36,6 +50,14 @@ export const App: React.FC = () => {
   const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
 
+  // Estados de Autenticação e Alertas de 50km
+  const [user, setUser] = useState<User | null>(null);
+  const [locations, setLocations] = useState<MonitoredLocation[]>([]);
+  const [alerts, setAlerts] = useState<AlertNotification[]>([]);
+  const [isAuthOpen, setIsAuthOpen] = useState<boolean>(false);
+  const [isAlertsOpen, setIsAlertsOpen] = useState<boolean>(false);
+  const [flyToLocation, setFlyToLocation] = useState<{ lat: number; lon: number; nonce: number } | null>(null);
+
   // Cache em memória para troca instantânea de scans durante a reprodução
   const plumesCache = useRef<Map<string, any>>(new Map());
   const hotspotsCache = useRef<Map<string, any>>(new Map());
@@ -45,6 +67,59 @@ export const App: React.FC = () => {
   const [showPlumes, setShowPlumes] = useState<boolean>(true);
   const [showHotspots, setShowHotspots] = useState<boolean>(true);
   const [showOriginsOnly, setShowOriginsOnly] = useState<boolean>(false);
+
+  // Carrega usuário autenticado
+  const refreshUserSession = useCallback(async () => {
+    if (!getAuthToken()) {
+      setUser(null);
+      setLocations([]);
+      setAlerts([]);
+      return;
+    }
+    try {
+      const u = await fetchCurrentUser();
+      setUser(u);
+      const [locs, alts] = await Promise.all([
+        fetchUserLocations().catch(() => []),
+        fetchUserAlerts().catch(() => []),
+      ]);
+      setLocations(locs);
+      setAlerts(alts);
+    } catch {
+      setUser(null);
+    }
+  }, []);
+
+  const refreshAlerts = useCallback(async () => {
+    if (!getAuthToken()) return;
+    try {
+      const alts = await fetchUserAlerts();
+      setAlerts(alts);
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  const refreshLocations = useCallback(async () => {
+    if (!getAuthToken()) return;
+    try {
+      const locs = await fetchUserLocations();
+      setLocations(locs);
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshUserSession();
+  }, [refreshUserSession]);
+
+  // Polling de alertas a cada 30s se logado
+  useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(refreshAlerts, 30000);
+    return () => clearInterval(interval);
+  }, [user, refreshAlerts]);
 
   // 1. Carregamento inicial (estatísticas, região, focos gerais e timeline)
   const loadInitialData = useCallback(async () => {
@@ -60,7 +135,6 @@ export const App: React.FC = () => {
       if (reg) setRegionGeoJSON(reg);
       if (frs && frs.length > 0) {
         setFrames(frs);
-        // Pré-carrega todas as imagens de satélite na memória do navegador para troca sem atraso
         frs.forEach((f) => {
           const img = new Image();
           img.src = f.image_url;
@@ -68,11 +142,9 @@ export const App: React.FC = () => {
       }
 
       if (times && times.length > 0) {
-        // Focos e plumas são carregados pelo efeito que observa o scan atual
         setTimeline(times);
-        setCurrentIdx(times.length - 1); // Último scan (mais recente)
+        setCurrentIdx(times.length - 1);
       } else {
-        // Ainda não há scans no banco: mostra plumas gerais e focos das últimas 6h
         const since = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
         const [generalPlumes, hots] = await Promise.all([
           fetchPlumes().catch(() => null),
@@ -88,7 +160,6 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     loadInitialData();
-    // Atualização periódica a cada 2 minutos
     const interval = setInterval(loadInitialData, 120000);
     return () => clearInterval(interval);
   }, [loadInitialData]);
@@ -99,104 +170,75 @@ export const App: React.FC = () => {
     if (!currentScanTime) return;
     let cancelled = false;
 
-    const scanTs = new Date(currentScanTime).getTime();
-    const start = new Date(scanTs - HOTSPOT_WINDOW_BEFORE_MS).toISOString();
-    const end = new Date(scanTs + HOTSPOT_WINDOW_AFTER_MS).toISOString();
-    const hKey = `${start}_${end}`;
-
-    // 1. Plumas (usa cache em memória para resposta instantânea)
     if (plumesCache.current.has(currentScanTime)) {
       setPlumesGeoJSON(plumesCache.current.get(currentScanTime));
     } else {
       fetchPlumes(currentScanTime)
-        .then((data) => {
-          if (!cancelled) {
-            plumesCache.current.set(currentScanTime, data);
-            setPlumesGeoJSON(data);
-          }
+        .then((plumesData) => {
+          if (cancelled) return;
+          plumesCache.current.set(currentScanTime, plumesData);
+          setPlumesGeoJSON(plumesData);
         })
-        .catch((err) => console.error("Erro ao atualizar plumas do scan:", err));
+        .catch(console.error);
     }
 
-    // 2. Focos (usa cache em memória)
-    if (hotspotsCache.current.has(hKey)) {
-      setHotspotsGeoJSON(hotspotsCache.current.get(hKey));
+    const scanMs = new Date(currentScanTime).getTime();
+    const startStr = new Date(scanMs - HOTSPOT_WINDOW_BEFORE_MS).toISOString();
+    const endStr = new Date(scanMs + HOTSPOT_WINDOW_AFTER_MS).toISOString();
+    const cacheKey = `${startStr}_${endStr}`;
+
+    if (hotspotsCache.current.has(cacheKey)) {
+      setHotspotsGeoJSON(hotspotsCache.current.get(cacheKey));
     } else {
-      fetchHotspots(start, end)
-        .then((data) => {
-          if (!cancelled) {
-            hotspotsCache.current.set(hKey, data);
-            setHotspotsGeoJSON(data);
-          }
+      fetchHotspots(startStr, endStr)
+        .then((hotspotsData) => {
+          if (cancelled) return;
+          hotspotsCache.current.set(cacheKey, hotspotsData);
+          setHotspotsGeoJSON(hotspotsData);
         })
-        .catch((err) => console.error("Erro ao atualizar focos do scan:", err));
+        .catch(console.error);
     }
 
-    // 3. Pré-busca dos próximos 2 scans para garantir fluidez perfeita a 60 FPS
-    if (isPlaying && timeline.length > 0) {
-      for (let offset = 1; offset <= 2; offset++) {
-        const nextIdx = (currentIdx + offset) % timeline.length;
-        const nextTime = timeline[nextIdx];
-        if (nextTime && !plumesCache.current.has(nextTime)) {
-          fetchPlumes(nextTime)
-            .then((data) => plumesCache.current.set(nextTime, data))
-            .catch(() => {});
-        }
-        if (nextTime) {
-          const nTs = new Date(nextTime).getTime();
-          const nStart = new Date(nTs - HOTSPOT_WINDOW_BEFORE_MS).toISOString();
-          const nEnd = new Date(nTs + HOTSPOT_WINDOW_AFTER_MS).toISOString();
-          const nKey = `${nStart}_${nEnd}`;
-          if (!hotspotsCache.current.has(nKey)) {
-            fetchHotspots(nStart, nEnd)
-              .then((data) => hotspotsCache.current.set(nKey, data))
-              .catch(() => {});
-          }
-        }
-      }
+    const nextIdx = (currentIdx + 1) % (timeline.length || 1);
+    const nextScan = timeline[nextIdx];
+    if (nextScan && !plumesCache.current.has(nextScan)) {
+      fetchPlumes(nextScan).then((data) => plumesCache.current.set(nextScan, data)).catch(() => {});
     }
 
     return () => {
       cancelled = true;
     };
-  }, [currentScanTime, timeline, currentIdx, isPlaying]);
+  }, [currentScanTime, currentIdx, timeline]);
 
-  // Quadro de satélite correspondente ao scan atual
+  // 3. Controle da reprodução da animação
+  useEffect(() => {
+    if (!isPlaying || timeline.length === 0) return;
+    const baseInterval = 1200;
+    const interval = setInterval(() => {
+      setCurrentIdx((prev) => (prev + 1) % timeline.length);
+    }, baseInterval / playbackSpeed);
+
+    return () => clearInterval(interval);
+  }, [isPlaying, timeline.length, playbackSpeed]);
+
   const currentFrame = React.useMemo(() => {
-    if (frames.length === 0) return null;
-    if (!currentScanTime) return frames[0];
-
-    const targetTs = new Date(currentScanTime).getTime();
-    let best: SatelliteFrame | null = null;
+    if (!currentScanTime || frames.length === 0) {
+      return frames.length > 0 ? frames[frames.length - 1] : null;
+    }
+    const targetMs = new Date(currentScanTime).getTime();
+    let bestFrame: SatelliteFrame | null = null;
     let minDiff = Infinity;
 
-    for (const f of frames) {
-      const diff = Math.abs(new Date(f.scan_time).getTime() - targetTs);
-      if (diff < minDiff && diff <= FRAME_MAX_DIFF_MS) {
+    for (const frame of frames) {
+      const fMs = new Date(frame.scan_time).getTime();
+      const diff = Math.abs(fMs - targetMs);
+      if (diff < minDiff) {
         minDiff = diff;
-        best = f;
+        bestFrame = frame;
       }
     }
-    // Retorna o frame mais próximo dentro da tolerância, ou o frame mais recente disponível
-    return best || frames[0] || null;
-  }, [frames, currentScanTime]);
-
-  // 3. Reprodução automática fluida com taxa de quadros e intervalo otimizados
-  const timerRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (isPlaying && timeline.length > 1) {
-      const intervalMs = Math.round(650 / playbackSpeed);
-      timerRef.current = window.setInterval(() => {
-        setCurrentIdx((prev) => (prev + 1) % timeline.length);
-      }, intervalMs);
-    } else if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [isPlaying, timeline.length, playbackSpeed]);
+    return minDiff <= FRAME_MAX_DIFF_MS ? bestFrame : frames[frames.length - 1];
+  }, [currentScanTime, frames]);
 
   const handleCycleSpeed = () => {
     setPlaybackSpeed((prev) => {
@@ -207,7 +249,6 @@ export const App: React.FC = () => {
     });
   };
 
-  // 4. Seleção de uma pluma para inspeção
   const handleSelectPlume = async (plumeId: number) => {
     try {
       const detail = await fetchPlumeDetail(plumeId);
@@ -221,9 +262,22 @@ export const App: React.FC = () => {
     setFocusRequest({ plume, nonce: Date.now() });
   };
 
+  const handleFocusLocation = (lat: number, lon: number) => {
+    setFlyToLocation({ lat, lon, nonce: Date.now() });
+  };
+
+  const handleLogout = () => {
+    clearAuthToken();
+    setUser(null);
+    setLocations([]);
+    setAlerts([]);
+  };
+
+  const unreadAlertsCount = alerts.filter((a) => !a.read_at).length;
+
   return (
     <div className="app-container">
-      {/* Cabeçalho com métricas e controles */}
+      {/* Cabeçalho com métricas, controles de camadas, sino de alertas e login */}
       <Header
         stats={stats}
         showSatellite={showSatellite}
@@ -234,9 +288,14 @@ export const App: React.FC = () => {
         onToggleHotspots={() => setShowHotspots(!showHotspots)}
         showOriginsOnly={showOriginsOnly}
         onToggleOriginsOnly={() => setShowOriginsOnly(!showOriginsOnly)}
+        user={user}
+        unreadAlertsCount={unreadAlertsCount}
+        onOpenAlerts={() => setIsAlertsOpen(true)}
+        onOpenAuth={() => setIsAuthOpen(true)}
+        onLogout={handleLogout}
       />
 
-      {/* Mapa central Leaflet */}
+      {/* Mapa central Leaflet com círculos de monitoramento de 50km */}
       <MapView
         regionGeoJSON={regionGeoJSON}
         plumesGeoJSON={plumesGeoJSON}
@@ -248,6 +307,8 @@ export const App: React.FC = () => {
         showPlumes={showPlumes}
         showHotspots={showHotspots}
         showOriginsOnly={showOriginsOnly}
+        userLocations={locations}
+        flyToLocation={flyToLocation}
         onSelectPlume={handleSelectPlume}
       />
 
@@ -273,6 +334,30 @@ export const App: React.FC = () => {
         onTogglePlay={() => setIsPlaying(!isPlaying)}
         playbackSpeed={playbackSpeed}
         onCycleSpeed={handleCycleSpeed}
+      />
+
+      {/* Modal de Autenticação / Cadastro de Usuário */}
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
+        onSuccess={(newUser) => {
+          setUser(newUser);
+          refreshUserSession();
+          setIsAlertsOpen(true);
+        }}
+      />
+
+      {/* Painel lateral de Notificações e Locais Monitorados (50 km) */}
+      <AlertsDrawer
+        isOpen={isAlertsOpen}
+        onClose={() => setIsAlertsOpen(false)}
+        user={user}
+        onOpenAuth={() => setIsAuthOpen(true)}
+        locations={locations}
+        onRefreshLocations={refreshLocations}
+        alerts={alerts}
+        onRefreshAlerts={refreshAlerts}
+        onFocusLocation={handleFocusLocation}
       />
     </div>
   );

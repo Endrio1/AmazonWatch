@@ -94,3 +94,77 @@ class HealthStatus(BaseModel):
     last_hotspot: datetime | None
     last_satellite_frame: datetime | None
     uptime_message: str | None = None
+
+
+# --- Autenticação e Usuários ---
+
+class UserRegister(BaseModel):
+    email: str
+    name: str
+    password: str
+
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
+
+class UserOut(BaseModel):
+    id: int
+    email: str
+    name: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserOut
+
+
+# --- Localizações Monitoradas (50 km) ---
+
+class LocationCreate(BaseModel):
+    label: str
+    lat: float
+    lon: float
+    radius_km: float = 50.0
+    notify_fire: bool = True
+    notify_smoke: bool = True
+
+
+class LocationOut(BaseModel):
+    id: int
+    user_id: int
+    label: str
+    lat: float
+    lon: float
+    radius_km: float
+    notify_fire: bool
+    notify_smoke: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# --- Notificações de Alertas ---
+
+class AlertNotificationOut(BaseModel):
+    id: int
+    location_id: int
+    location_label: str | None = None
+    alert_type: Literal["FIRE", "SMOKE"]
+    title: str
+    message: str
+    distance_km: float
+    entity_id: int
+    read_at: datetime | None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+

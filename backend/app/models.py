@@ -118,3 +118,60 @@ class IngestLog(Base):
     processed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class User(Base):
+    """Cadastro de usuários do sistema."""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class UserMonitoredLocation(Base):
+    """Localização de interesse monitorada pelo usuário (raio padrão 50 km)."""
+
+    __tablename__ = "user_monitored_locations"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    label: Mapped[str] = mapped_column(String(120), nullable=False)
+    lat: Mapped[float] = mapped_column(Float, nullable=False)
+    lon: Mapped[float] = mapped_column(Float, nullable=False)
+    geom = mapped_column(Geometry("POINT", srid=4326, spatial_index=True), nullable=False)
+    radius_km: Mapped[float] = mapped_column(Float, default=50.0, nullable=False)
+    notify_fire: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    notify_smoke: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AlertNotification(Base):
+    """Notificação de alerta gerada para fogo a menos de 50 km ou fumaça na região."""
+
+    __tablename__ = "alert_notifications"
+    __table_args__ = (
+        Index("ix_alerts_user_created", "user_id", "created_at"),
+        UniqueConstraint("location_id", "alert_type", "entity_id", name="uq_alert_entity"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    location_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("user_monitored_locations.id", ondelete="CASCADE"), nullable=False
+    )
+    alert_type: Mapped[str] = mapped_column(String(16), nullable=False)  # "FIRE" ou "SMOKE"
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    distance_km: Mapped[float] = mapped_column(Float, nullable=False)
+    entity_id: Mapped[int] = mapped_column(BigInteger, nullable=False)  # hotspot_id ou plume_id
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
