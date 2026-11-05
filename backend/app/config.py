@@ -2,12 +2,21 @@
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Segredos que já foram expostos no repositório e nunca devem ser aceitos.
+_KNOWN_INSECURE_JWT_SECRETS = frozenset({
+    "amazonwatch_super_secret_jwt_key_2026_x89f4",
+})
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # Procura o .env na raiz do projeto (execução local a partir de backend/) e no
+    # diretório atual; em caso de conflito, o último arquivo da tupla tem prioridade.
+    model_config = SettingsConfigDict(env_file=("../.env", ".env"), extra="ignore")
 
     # Banco de dados
     database_url: str = "postgresql+psycopg://amazonwatch:amazonwatch@localhost:5433/amazonwatch"
@@ -19,9 +28,24 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:8080"]
 
     # Autenticação e Segurança JWT
-    jwt_secret: str = "amazonwatch_super_secret_jwt_key_2026_x89f4"
-    jwt_algorithm: str = "HS256"
+    # Obrigatório e sem valor padrão: a aplicação não inicia sem um JWT_SECRET
+    # forte definido no ambiente (evita assinar tokens com chave pública/conhecida).
+    # Gere com: python -c "import secrets; print(secrets.token_urlsafe(48))"
+    jwt_secret: SecretStr = Field(min_length=32)
+    jwt_algorithm: Literal["HS256", "HS384", "HS512"] = "HS256"
     jwt_access_token_expire_minutes: int = 10080
+
+    @field_validator("jwt_secret")
+    @classmethod
+    def _reject_known_jwt_secrets(cls, v: SecretStr) -> SecretStr:
+        """Recusa segredos públicos (antigo padrão do código e placeholder do .env.example)."""
+        value = v.get_secret_value()
+        if value in _KNOWN_INSECURE_JWT_SECRETS or "exemplo" in value.lower():
+            raise ValueError(
+                "JWT_SECRET usa um valor público/de exemplo. Gere um novo com: "
+                'python -c "import secrets; print(secrets.token_urlsafe(48))"'
+            )
+        return v
 
     # --- Fontes de dados
 
