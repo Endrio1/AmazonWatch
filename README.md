@@ -69,6 +69,31 @@ AmazonWatch/
     │       └── Legend.tsx          # Legenda das camadas
 ```
 
+### Diagrama de Componentes
+
+```mermaid
+flowchart LR
+    user(["Usuário"])
+    fontes["Fontes de Dados<br/>INPE · NOAA GOES-19 · CPTEC"]
+
+    subgraph app["AmazonWatch"]
+        frontend["Frontend<br/>React + Leaflet"]
+        api["API REST<br/>FastAPI"]
+        worker["Worker<br/>ingestão + processamento"]
+    end
+
+    db[("PostGIS")]
+
+    user --> frontend
+    frontend -->|HTTP| api
+    api --> db
+    fontes --> worker
+    worker --> db
+```
+
+> [!NOTE]
+> A API e o worker usam a mesma imagem Docker (`backend/`) e compartilham o banco PostGIS e o volume `media_data`. Em produção, o Nginx serve frontend e API na mesma origem.
+
 ---
 
 ## 🚀 Como Executar
