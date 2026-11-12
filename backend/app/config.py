@@ -29,8 +29,6 @@ class Settings(BaseSettings):
 
     # Autenticação e Segurança JWT
     # Obrigatório e sem valor padrão: a aplicação não inicia sem um JWT_SECRET
-    # forte definido no ambiente (evita assinar tokens com chave pública/conhecida).
-    # Gere com: python -c "import secrets; print(secrets.token_urlsafe(48))"
     jwt_secret: SecretStr = Field(min_length=32)
     jwt_algorithm: Literal["HS256", "HS384", "HS512"] = "HS256"
     jwt_access_token_expire_minutes: int = 10080

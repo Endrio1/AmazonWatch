@@ -15,6 +15,8 @@ from pathlib import Path
 import httpx
 import numpy as np
 import xarray as xr
+from sqlalchemy import delete
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.config import Settings
@@ -141,21 +143,11 @@ def process_adp_file(
         simplify_deg=s.smoke_simplify_deg,
     )
 
-    # Cria ou substitui o scan
-    scan = db.get(SmokeScan, scan_time)
-    if scan:
-        scan.source_file = key
-        scan.smoke_pixels = smoke_pixels
-        scan.plume_count = len(plumes)
-    else:
-        scan = SmokeScan(
-            scan_time=scan_time,
-            source_file=key,
-            smoke_pixels=smoke_pixels,
-            plume_count=len(plumes),
-        )
-        db.add(scan)
-    db.flush()
+    # O upsert bloqueia a linha do scan até o commit, serializando substituições concorrentes.
+    scan_values = dict(source_file=key, smoke_pixels=smoke_pixels, plume_count=len(plumes))
+    scan_insert = insert(SmokeScan).values(scan_time=scan_time, **scan_values)
+    db.execute(scan_insert.on_conflict_do_update(index_elements=[SmokeScan.scan_time], set_=scan_values))
+    db.execute(delete(SmokePlume).where(SmokePlume.scan_time == scan_time))
 
     # Adiciona as plumas
     created_plumes: list[SmokePlume] = []

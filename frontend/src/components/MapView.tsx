@@ -3,6 +3,10 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { FocusRequest, MonitoredLocation, PlumeDetail, SatelliteFrame } from "../types";
 
+// Recorte da Amazônia Legal e do entorno mostrado nas imagens de referência.
+const MAP_BOUNDS = L.latLngBounds([-18, -82], [10, -39]);
+const ZOOM_SNAP = 0.25;
+
 interface MapViewProps {
   regionGeoJSON: any;
   plumesGeoJSON: any;
@@ -10,6 +14,7 @@ interface MapViewProps {
   selectedPlumeDetail: PlumeDetail | null;
   focusRequest: FocusRequest | null;
   currentFrame: SatelliteFrame | null;
+  onVisibleFrameChange: (scanTime: string | null) => void;
   showSatellite: boolean;
   showPlumes: boolean;
   showHotspots: boolean;
@@ -26,6 +31,7 @@ export const MapView: React.FC<MapViewProps> = ({
   selectedPlumeDetail,
   focusRequest,
   currentFrame,
+  onVisibleFrameChange,
   showSatellite,
   showPlumes,
   showHotspots,
@@ -53,17 +59,33 @@ export const MapView: React.FC<MapViewProps> = ({
     if (!mapContainerRef.current || mapRef.current) return;
 
     const map = L.map(mapContainerRef.current, {
-      center: [-5.0, -60.0],
-      zoom: 4.8,
+      zoomSnap: ZOOM_SNAP,
+      maxZoom: 18,
+      maxBounds: MAP_BOUNDS,
+      maxBoundsViscosity: 1,
       zoomControl: false,
       attributionControl: false,
     });
+
+    const northWest = map.project(MAP_BOUNDS.getNorthWest(), 0);
+    const southEast = map.project(MAP_BOUNDS.getSouthEast(), 0);
+    const boundsSize = southEast.subtract(northWest);
+    const overviewZoom = () => {
+      const { x, y } = map.getSize();
+      const scale = Math.max(x / boundsSize.x, y / boundsSize.y);
+      return Math.ceil(map.getScaleZoom(scale, 0) / ZOOM_SNAP) * ZOOM_SNAP;
+    };
+    const initialZoom = overviewZoom();
+    map.setMinZoom(initialZoom);
+    map.setView(map.unproject(northWest.add(southEast).divideBy(2), 0), initialZoom);
+    map.on("resize", () => map.setMinZoom(overviewZoom()));
 
     // 1. Basemap base escuro de alta performance (sem chave de API e sem marcas d'água)
     L.tileLayer(
       "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
       {
         maxZoom: 18,
+        noWrap: true,
       }
     ).addTo(map);
 
@@ -83,6 +105,7 @@ export const MapView: React.FC<MapViewProps> = ({
       "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
       {
         maxZoom: 18,
+        noWrap: true,
         opacity: 0.8,
         pane: "boundaries-pane",
       }
@@ -141,6 +164,7 @@ export const MapView: React.FC<MapViewProps> = ({
         map.removeLayer(previousOverlayRef.current);
         previousOverlayRef.current = null;
       }
+      onVisibleFrameChange(null);
       return;
     }
 
@@ -159,10 +183,11 @@ export const MapView: React.FC<MapViewProps> = ({
 
     // Guarda a camada atual para fazer o crossfade
     if (satelliteOverlayRef.current) {
-      if (previousOverlayRef.current) {
-        map.removeLayer(previousOverlayRef.current);
+      if (satelliteOverlayRef.current.options.opacity === 0) {
+        map.removeLayer(satelliteOverlayRef.current);
+      } else {
+        previousOverlayRef.current = satelliteOverlayRef.current;
       }
-      previousOverlayRef.current = satelliteOverlayRef.current;
     }
 
     const newOverlay = L.imageOverlay(currentFrame.image_url, bounds, {
@@ -177,7 +202,9 @@ export const MapView: React.FC<MapViewProps> = ({
 
     // Quando a imagem carregar, faz o crossfade suave
     const onImgLoad = () => {
+      if (satelliteOverlayRef.current !== newOverlay) return;
       newOverlay.setOpacity(0.95);
+      onVisibleFrameChange(currentFrame.scan_time);
       if (previousOverlayRef.current) {
         const oldLayer = previousOverlayRef.current;
         previousOverlayRef.current = null;
@@ -190,12 +217,12 @@ export const MapView: React.FC<MapViewProps> = ({
     };
 
     const imgEl = newOverlay.getElement();
-    if (imgEl && (imgEl as HTMLImageElement).complete) {
+    if (imgEl instanceof HTMLImageElement && imgEl.complete && imgEl.naturalWidth > 0) {
       onImgLoad();
     } else {
       newOverlay.on("load", onImgLoad);
     }
-  }, [showSatellite, currentFrame]);
+  }, [showSatellite, currentFrame, onVisibleFrameChange]);
 
   // 3. Polígonos das plumas de fumaça (NOAA GOES-19)
   useEffect(() => {

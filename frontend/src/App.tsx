@@ -46,6 +46,7 @@ export const App: React.FC = () => {
   const [plumesGeoJSON, setPlumesGeoJSON] = useState<any>(null);
   const [hotspotsGeoJSON, setHotspotsGeoJSON] = useState<any>(null);
   const [frames, setFrames] = useState<SatelliteFrame[]>([]);
+  const [visibleFrameTime, setVisibleFrameTime] = useState<string | null>(null);
   const [selectedPlume, setSelectedPlume] = useState<PlumeDetail | null>(null);
   const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
@@ -303,6 +304,7 @@ export const App: React.FC = () => {
         selectedPlumeDetail={selectedPlume}
         focusRequest={focusRequest}
         currentFrame={currentFrame}
+        onVisibleFrameChange={setVisibleFrameTime}
         showSatellite={showSatellite}
         showPlumes={showPlumes}
         showHotspots={showHotspots}
@@ -320,7 +322,7 @@ export const App: React.FC = () => {
       />
 
       {/* Legenda flutuante */}
-      <Legend showSatellite={showSatellite} />
+      <Legend showSatellite={showSatellite} satelliteScanTime={visibleFrameTime} />
 
       {/* Linha do tempo inferior com player */}
       <TimelineDeck

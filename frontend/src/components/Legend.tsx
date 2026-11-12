@@ -2,9 +2,10 @@ import React from "react";
 
 interface LegendProps {
   showSatellite?: boolean;
+  satelliteScanTime: string | null;
 }
 
-export const Legend: React.FC<LegendProps> = ({ showSatellite = true }) => {
+export const Legend: React.FC<LegendProps> = ({ showSatellite = true, satelliteScanTime }) => {
   return (
     <div className="floating-legend">
       <div style={{ fontWeight: 700, color: "#fff", marginBottom: 6 }}>Legenda</div>
@@ -30,6 +31,14 @@ export const Legend: React.FC<LegendProps> = ({ showSatellite = true }) => {
             <span>0°C</span>
             <span>+40°C</span>
           </div>
+          {satelliteScanTime && (
+            <div className="legend-item" style={{ marginTop: 6 }}>
+              <span>Horário da imagem</span>
+              <time dateTime={satelliteScanTime}>
+                {new Date(satelliteScanTime).toISOString().slice(0, 16).replace("T", " ")} UTC
+              </time>
+            </div>
+          )}
         </div>
       )}
 
