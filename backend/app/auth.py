@@ -70,9 +70,9 @@ def get_current_user(
         )
 
     user = db.query(User).filter(User.id == int(user_id)).first()
-    if not user or not user.is_active:
+    if not user or not user.is_active or payload.get("ver", 0) != user.password_version:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Usuário inativo ou não encontrado",
+            detail="Sessão inválida ou expirada",
         )
     return user

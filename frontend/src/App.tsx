@@ -55,7 +55,10 @@ export const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [locations, setLocations] = useState<MonitoredLocation[]>([]);
   const [alerts, setAlerts] = useState<AlertNotification[]>([]);
-  const [isAuthOpen, setIsAuthOpen] = useState<boolean>(false);
+  const [resetToken, setResetToken] = useState(() =>
+    new URLSearchParams(window.location.hash.slice(1)).get("redefinir-senha"),
+  );
+  const [isAuthOpen, setIsAuthOpen] = useState(resetToken !== null);
   const [isAlertsOpen, setIsAlertsOpen] = useState<boolean>(false);
   const [flyToLocation, setFlyToLocation] = useState<{ lat: number; lon: number; nonce: number } | null>(null);
 
@@ -274,6 +277,14 @@ export const App: React.FC = () => {
     setAlerts([]);
   };
 
+  const clearResetLink = () => {
+    if (resetToken === null) return;
+    setResetToken(null);
+    const url = new URL(window.location.href);
+    url.hash = "";
+    window.history.replaceState(window.history.state, "", url);
+  };
+
   const unreadAlertsCount = alerts.filter((a) => !a.read_at).length;
 
   return (
@@ -341,7 +352,16 @@ export const App: React.FC = () => {
       {/* Modal de Autenticação / Cadastro de Usuário */}
       <AuthModal
         isOpen={isAuthOpen}
-        onClose={() => setIsAuthOpen(false)}
+        resetToken={resetToken}
+        onDismissResetLink={clearResetLink}
+        onClose={() => {
+          clearResetLink();
+          setIsAuthOpen(false);
+        }}
+        onPasswordReset={() => {
+          clearResetLink();
+          handleLogout();
+        }}
         onSuccess={(newUser) => {
           setUser(newUser);
           refreshUserSession();

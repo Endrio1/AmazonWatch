@@ -116,6 +116,22 @@ export async function fetchCurrentUser() {
   return res.json();
 }
 
+export async function recoverPassword(
+  request: { email: string } | { token: string; password: string },
+): Promise<string> {
+  const endpoint = "email" in request ? "forgot-password" : "reset-password";
+  const res = await fetch(`${API_BASE}/auth/${endpoint}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || typeof data?.message !== "string") {
+    throw new Error(typeof data?.detail === "string" ? data.detail : "Falha na recuperação de senha");
+  }
+  return data.message;
+}
+
 // --- Localizações Monitoradas (50km) ---
 
 export async function fetchUserLocations() {

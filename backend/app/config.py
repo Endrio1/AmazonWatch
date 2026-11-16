@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, HttpUrl, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Segredos que já foram expostos no repositório e nunca devem ser aceitos.
@@ -32,6 +32,14 @@ class Settings(BaseSettings):
     jwt_secret: SecretStr = Field(min_length=32)
     jwt_algorithm: Literal["HS256", "HS384", "HS512"] = "HS256"
     jwt_access_token_expire_minutes: int = 10080
+
+    # Recuperação de senha
+    app_public_url: HttpUrl = HttpUrl("http://localhost:3000")
+    smtp_host: str = ""
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_user: str = ""
+    smtp_password: SecretStr = SecretStr("")
+    smtp_from: str = ""
 
     @field_validator("jwt_secret")
     @classmethod

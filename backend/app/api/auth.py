@@ -1,12 +1,17 @@
 """Endpoints de autenticação e registro de usuários."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth import create_access_token, get_current_user, hash_password, verify_password
+from app.config import get_settings
 from app.db import get_db
 from app.models import User
-from app.schemas import Token, UserLogin, UserOut, UserRegister
+from app.password_recovery import issue_password_reset, reset_digest, send_recovery_email
+from app.schemas import PasswordReset, PasswordResetRequest, Token, UserLogin, UserOut, UserRegister
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -37,7 +42,7 @@ def register(payload: UserRegister, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
 
-    token = create_access_token(data={"sub": str(user.id), "email": user.email})
+    token = create_access_token(data={"sub": str(user.id), "email": user.email, "ver": user.password_version})
     return Token(access_token=token, user=UserOut.model_validate(user))
 
 
@@ -59,8 +64,45 @@ def login(payload: UserLogin, db: Session = Depends(get_db)):
             detail="Conta de usuário inativa",
         )
 
-    token = create_access_token(data={"sub": str(user.id), "email": user.email})
+    token = create_access_token(data={"sub": str(user.id), "email": user.email, "ver": user.password_version})
     return Token(access_token=token, user=UserOut.model_validate(user))
+
+
+@router.post("/forgot-password", status_code=status.HTTP_202_ACCEPTED)
+def forgot_password(payload: PasswordResetRequest, tasks: BackgroundTasks) -> dict[str, str]:
+    settings = get_settings()
+    if not settings.smtp_host or not settings.smtp_from:
+        raise HTTPException(status_code=503, detail="Recuperação por e-mail indisponível")
+
+    email = payload.email.strip().lower()
+    tasks.add_task(issue_password_reset, email)
+    return {"message": "Se o e-mail estiver cadastrado, você receberá um link para redefinir a senha."}
+
+
+@router.post("/reset-password")
+def reset_password(payload: PasswordReset, tasks: BackgroundTasks, db: Session = Depends(get_db)) -> dict[str, str]:
+    if len(payload.password.encode("utf-8")) > 72:
+        raise HTTPException(status_code=400, detail="A senha deve ter no máximo 72 bytes")
+
+    user = db.scalar(
+        select(User)
+        .where(User.password_reset_digest == reset_digest(payload.token), User.is_active.is_(True))
+        .with_for_update()
+    )
+    if not user or not user.password_reset_expires_at or user.password_reset_expires_at <= datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="Link inválido ou expirado. Solicite um novo link.")
+
+    user.password_hash = hash_password(payload.password)
+    user.password_reset_digest = None
+    user.password_reset_expires_at = None
+    user.password_version += 1
+    db.commit()
+
+    tasks.add_task(
+        send_recovery_email, user.email, "Senha do AmazonWatch alterada",
+        "A senha da sua conta AmazonWatch foi alterada. Se você não fez essa alteração, redefina sua senha.",
+    )
+    return {"message": "Senha redefinida. Entre com a nova senha."}
 
 
 @router.get("/me", response_model=UserOut)

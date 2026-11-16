@@ -55,7 +55,7 @@ AmazonWatch/
 │   └── tests/                  # Testes unitários pytest
 └── frontend/
     ├── Dockerfile
-    ├── nginx.conf              # Nginx com proxy reverso para API e mídia
+    ├── nginx.conf              # Nginx com proxy para API e entrega direta de mídia
     ├── src/
     │   ├── App.tsx             # Aplicação React
     │   ├── api.ts              # Cliente REST
@@ -111,6 +111,15 @@ O compose inicializará:
 - **FastAPI / Swagger:** http://localhost:8000/docs
 - **PostGIS:** `localhost:5433` (banco `amazonwatch`, usuário `amazonwatch`)
 - **Worker:** Executa a ingestão automaticamente a cada 5 minutos.
+- **Migrações:** O serviço temporário `migrate` executa `alembic upgrade head` e encerra. API e worker aguardam sua conclusão.
+
+API, worker e migrações usam a imagem `amazonwatch-backend:local`. O código do
+backend está incorporado à imagem. Após alterações, execute
+`docker compose up -d --build` para reconstruir e atualizar os serviços.
+O Nginx entrega `/media/` diretamente do volume `media_data`, montado somente
+para leitura no frontend. O worker grava nesse volume, e a API mantém acesso
+para inicializar os diretórios e atender o acesso direto pela porta 8000.
+Mantenha uma instância do worker, pois ele contém o agendador do pipeline.
 
 ---
 
@@ -150,6 +159,20 @@ Acesse em: http://localhost:5173
 ---
 
 ## 📡 Endpoints da API REST
+
+### Recuperação de senha por e-mail
+
+Na tela de login, selecione **Esqueci minha senha**. O link enviado ao e-mail cadastrado
+abre o formulário de redefinição e expira em 30 minutos. Depois da troca, entre com a
+nova senha. As sessões anteriores são invalidadas.
+
+Para habilitar a entrega, configure `APP_PUBLIC_URL` com o endereço público HTTPS do
+frontend e preencha `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` e `SMTP_FROM`
+no `.env`. Use um remetente autorizado pelo provedor. A porta 587 usa STARTTLS e a
+porta 465 usa TLS desde a conexão. O serviço migrate do Compose aplica as migrações antes de iniciar API e worker.
+Em execução local fora do Compose, execute `alembic upgrade head` antes de subir a API.
+
+### Rotas públicas de monitoramento
 
 - `GET /api/plumes` — Lista polígonos de plumas de fumaça no formato GeoJSON.
 - `GET /api/plumes/{id}` — Detalhes completos da pluma, centróide e focos de incêndio de origem.

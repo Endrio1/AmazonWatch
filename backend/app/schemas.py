@@ -109,6 +109,15 @@ class UserLogin(BaseModel):
     password: str
 
 
+class PasswordResetRequest(BaseModel):
+    email: str = Field(min_length=1, max_length=255)
+
+
+class PasswordReset(BaseModel):
+    token: str = Field(min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]+$")
+    password: str = Field(min_length=6, max_length=72)
+
+
 class UserOut(BaseModel):
     id: int
     email: str

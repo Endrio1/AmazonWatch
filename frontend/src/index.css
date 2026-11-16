@@ -818,6 +818,21 @@ html, body, #root {
   font-size: 0.8rem;
 }
 
+.auth-recovery-title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.auth-message {
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: var(--radius-md);
+  background: rgba(56, 189, 248, 0.1);
+  color: #bae6fd;
+  font-size: 0.85rem;
+}
+
 .form-group {
   display: flex;
   flex-direction: column;
@@ -893,6 +908,10 @@ html, body, #root {
   text-align: center;
   font-size: 0.8rem;
   color: var(--text-muted);
+}
+
+.auth-recovery-link {
+  align-self: flex-end;
 }
 
 .auth-switch-link {
