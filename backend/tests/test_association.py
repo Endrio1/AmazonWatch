@@ -55,3 +55,12 @@ def test_score_candidates_cluster_origin():
     # Foco do cluster 2 não deve ser marcado como origem
     assert by_id[20].is_origin is False
     assert by_id[10].score > by_id[20].score
+
+
+def test_transport_score_can_select_distant_source():
+    distant = Candidate(1, 100, 180, 1, transport_score=0.9)
+    nearby = Candidate(2, 0, 0, 2, transport_score=0.1)
+    results = score_candidates([distant, nearby], AssociationParams())
+    assert results[0].is_origin
+    assert not results[1].is_origin
+    assert results[0].score == 0.9

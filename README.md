@@ -182,3 +182,54 @@ Em execução local fora do Compose, execute `alembic upgrade head` antes de sub
 - `GET /api/stats` — Totais de focos, plumas ativas, área total coberta e incêndios de origem.
 - `GET /api/region` — GeoJSON do polígono da Amazônia Legal.
 - `GET /api/health` — Status de conectividade e horários dos últimos dados ingeridos.
+
+### Associação com vento IGRA
+
+O worker baixa automaticamente o catálogo de estações e os arquivos recentes IGRA
+v2 da NOAA, consultando a fonte a cada 60 minutos. Seleciona estações com atividade
+no ano atual ou anterior entre 22°S–10°N e 82°W–40°W. O volume `igra_data` preserva
+um snapshot dos perfis recentes entre reinícios. Cada atualização substitui os
+perfis por estação, evitando duplicatas, e mantém os anteriores se o download falhar.
+
+A associação escolhe a estação mais próxima com sondagem anterior ao scan, idade
+máxima de 24 horas e distância máxima de 500 km. Interpola componentes do vento nos
+níveis de 925, 850 e 700 hPa, sem extrapolar níveis ausentes. Calcula seis horas de
+advecção retroativa, assumindo vento uniforme e constante em cada nível de pressão.
+Esses parâmetros iniciais exigem validação. Níveis de pressão não correspondem a
+alturas fixas sobre o solo. O modelo não acompanha movimentos verticais nem a
+identidade de uma pluma entre scans.
+
+Os focos compatíveis são procurados a até 25 km do percurso, com tolerância temporal
+de uma hora. Sem observação adequada, usa-se a associação espacial anterior e o
+motivo aparece nos logs. Os dados usam pressão em Pa e velocidade em décimos de m/s,
+convertidas internamente para hPa e m/s. A direção meteorológica é convertida para
+componentes leste/norte antes da interpolação.
+
+Execute `docker compose up -d --build` para aplicar. O arquivo adicional do HYSPLIT
+foi removido. As variáveis `IGRA_ENABLED` (padrão true) e `IGRA_REFRESH_MINUTES`
+(padrão 60) podem ser configuradas no `.env`. O pipeline consulta as demais fontes
+cada cinco minutos e o mapa atualiza a cada dois minutos. A disponibilidade de novas
+sondagens depende da NOAA e da frequência de observação da estação.
+
+### Retenção dos arquivos coletados
+
+O worker remove imagens de satélite com mais de 48 horas e seus registros de
+quadros no banco. Também verifica imagens órfãs em `/data/media/frames` pela data
+de modificação. Os arquivos NetCDF baixados ficam em `/data/netcdf`, no volume
+`netcdf_data`, por 48 horas após o download. Downloads incompletos são removidos
+em caso de erro; resíduos de uma interrupção são eliminados após 48 horas.
+A limpeza ocorre antes e depois de cada ciclo do worker (a cada 5 minutos por
+padrão), inclusive na inicialização. O worker precisa estar em execução.
+
+As variáveis `FRAME_RETENTION_HOURS=48` e `NETCDF_RETENTION_HOURS=48` controlam
+os prazos no `.env`. O histórico de focos e plumas mantém sua retenção própria.
+A limpeza também remove arquivos `tmp*.nc` diretamente em `/tmp` com mais de
+`NETCDF_RETENTION_HOURS` horas, incluindo resíduos do coletor anterior. Outros
+nomes, subdiretórios e links simbólicos são preservados. No Docker, esse caminho
+é o `/tmp` do container do worker, não o `/tmp` do servidor host.
+
+Para aplicar uma atualização em uma instalação Docker existente:
+
+```bash
+docker compose up -d --build worker
+```

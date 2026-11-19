@@ -11,6 +11,7 @@ Executa:
 import argparse
 import logging
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 from sqlalchemy import delete, select
@@ -21,6 +22,7 @@ from app.ingest.bdqueimadas import ingest_hotspots
 from app.ingest.common import make_client
 from app.ingest.dsat_frames import ingest_dsat_frames
 from app.ingest.goes_adp import ingest_adp
+from app.ingest.retention import remove_expired_files
 from app.models import FireHotspot, IngestLog, SatelliteFrame, SmokeScan
 from app.processing.association import reassociate_recent
 from app.region import Region, get_region
@@ -37,6 +39,18 @@ def cleanup_old_data(settings: Settings) -> None:
     now = datetime.now(timezone.utc)
     cutoff_retention = now - timedelta(days=settings.retention_days)
     cutoff_frames = now - timedelta(hours=settings.frame_retention_hours)
+
+    # Limpa arquivos mesmo quando o banco está indisponível, incluindo órfãos.
+    remove_expired_files(
+        settings.netcdf_dir, ("*.nc", "download_*.part"),
+        now - timedelta(hours=settings.netcdf_retention_hours),
+    )
+    # Resíduos do NamedTemporaryFile usado por versões anteriores do coletor.
+    remove_expired_files(
+        Path("/tmp"), ("tmp*.nc",),
+        now - timedelta(hours=settings.netcdf_retention_hours),
+    )
+    remove_expired_files(settings.media_dir / "frames", ("satellite_*.jpg",), cutoff_frames)
 
     with session_scope() as db:
         # Remove quadros de satélite antigos do banco e do disco
@@ -70,7 +84,20 @@ def run_pipeline(settings: Settings | None = None, region: Region | None = None)
     log.info("Iniciando ciclo do pipeline AmazonWatch...")
     t0 = datetime.now(timezone.utc)
 
+    # Libera espaço antes de iniciar novos downloads.
+    try:
+        cleanup_old_data(settings)
+    except Exception:
+        log.exception("Erro na limpeza antes da coleta")
+
     with make_client() as client:
+        if settings.igra_enabled:
+            try:
+                from app.ingest.igra import refresh_igra
+                refresh_igra(client, settings)
+            except Exception:
+                log.exception("Falha na coleta IGRA; usando perfis previamente disponíveis")
+
         # 1. BDQueimadas
         try:
             with session_scope() as db:

@@ -17,6 +17,7 @@ Para cada pluma (scan ``t``):
    como origem, pois grandes plumas costumam ter várias fontes.
 """
 
+import logging
 import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -34,6 +35,7 @@ class Candidate:
     distance_km: float
     age_minutes: float  # positivo = foco anterior ao scan
     cluster_id: int
+    transport_score: float | None = None
 
 
 @dataclass(frozen=True)
@@ -61,6 +63,8 @@ class LinkResult:
 
 
 def hotspot_score(c: Candidate, p: AssociationParams) -> float:
+    if c.transport_score is not None:
+        return c.transport_score
     d = max(c.distance_km, 0.0)
     age_h = abs(c.age_minutes) / 60.0
     return math.exp(-d / p.distance_scale_km) * math.exp(-age_h / p.age_scale_hours)
@@ -110,6 +114,15 @@ _CANDIDATES_SQL = text(
 
 
 def find_candidates(db: Session, plume_id: int, s: Settings) -> list[Candidate]:
+    if s.igra_enabled:
+        from app.processing.trajectories import trajectory_candidates
+        try:
+            rows = trajectory_candidates(db, plume_id, s)
+        except (OSError, ValueError):
+            logging.getLogger(__name__).exception("IGRA indisponível para pluma %s; usando associação espacial", plume_id)
+        else:
+            return [Candidate(r.hotspot_id, float(r.distance_km), float(r.age_minutes),
+                              int(r.cluster_id), float(r.transport_score)) for r in rows]
     rows = db.execute(
         _CANDIDATES_SQL,
         {

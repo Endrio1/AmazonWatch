@@ -145,7 +145,14 @@ export const App: React.FC = () => {
         });
       }
 
+      plumesCache.current.clear();
+      hotspotsCache.current.clear();
       if (times && times.length > 0) {
+        const latestPlumes = await fetchPlumes(times[times.length - 1]).catch(() => null);
+        if (latestPlumes) {
+          plumesCache.current.set(times[times.length - 1], latestPlumes);
+          setPlumesGeoJSON(latestPlumes);
+        }
         setTimeline(times);
         setCurrentIdx(times.length - 1);
       } else {

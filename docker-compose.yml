@@ -76,11 +76,18 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-amazonwatch}:${POSTGRES_PASSWORD:-amazonwatch}@postgis:5432/${POSTGRES_DB:-amazonwatch}
       MEDIA_DIR: /data/media
+      FRAME_RETENTION_HOURS: ${FRAME_RETENTION_HOURS:-48}
+      NETCDF_RETENTION_HOURS: ${NETCDF_RETENTION_HOURS:-48}
+      NETCDF_DIR: /data/netcdf
+      IGRA_ENABLED: ${IGRA_ENABLED:-true}
+      IGRA_REFRESH_MINUTES: ${IGRA_REFRESH_MINUTES:-60}
       PIPELINE_INTERVAL_MINUTES: "5"
       JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no .env (veja .env.example)}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       JWT_ACCESS_TOKEN_EXPIRE_MINUTES: ${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-10080}
     volumes:
+      - netcdf_data:/data/netcdf
+      - igra_data:/data/igra
       - media_data:/data/media
 
 
@@ -100,3 +107,5 @@ services:
 volumes:
   postgis_data:
   media_data:
+  igra_data:
+  netcdf_data:

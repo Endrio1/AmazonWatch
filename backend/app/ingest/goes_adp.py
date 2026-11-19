@@ -198,22 +198,29 @@ def ingest_adp(
     bucket_url = s.goes_bucket_url.rstrip("/")
     total_plumes = 0
 
+    s.netcdf_dir.mkdir(parents=True, exist_ok=True)
+
     for key, scan_time in all_files:
         if key in done:
             continue
 
         url = f"{bucket_url}/{key}"
+        tmp_path = None
+        nc_path = s.netcdf_dir / Path(key).name
         try:
-            with tempfile.NamedTemporaryFile(suffix=".nc", delete=False) as tmp:
+            with tempfile.NamedTemporaryFile(
+                dir=s.netcdf_dir, prefix="download_", suffix=".part", delete=False
+            ) as tmp:
                 tmp_path = Path(tmp.name)
                 with client.stream("GET", url) as resp:
                     resp.raise_for_status()
                     for chunk in resp.iter_bytes(chunk_size=128 * 1024):
                         tmp.write(chunk)
 
+            tmp_path.replace(nc_path)
             smoke_px, n_plumes = process_adp_file(
                 db=db,
-                nc_path=tmp_path,
+                nc_path=nc_path,
                 key=key,
                 scan_time=scan_time,
                 s=s,
@@ -235,7 +242,7 @@ def ingest_adp(
             mark(db, SOURCE, key, "error", str(exc)[:500])
             db.commit()
         finally:
-            if "tmp_path" in locals() and tmp_path.exists():
+            if tmp_path is not None:
                 tmp_path.unlink(missing_ok=True)
 
     return total_plumes

@@ -86,10 +86,22 @@ class Settings(BaseSettings):
     assoc_max_origin_clusters: int = 3
     assoc_recompute_hours: float = 2.0
 
+    igra_enabled: bool = True
+    igra_cache_dir: Path = Path("/data/igra")
+    igra_refresh_minutes: int = Field(default=60, ge=5)
+    igra_max_age_hours: float = Field(default=24, gt=0)
+    igra_max_station_distance_km: float = Field(default=500, gt=0)
+    igra_pressure_levels_hpa: list[float] = Field(default=[925, 850, 700], min_length=1)
+    igra_duration_hours: int = Field(default=6, ge=1, le=24)
+    igra_corridor_km: float = Field(default=25, gt=0)
+    igra_time_tolerance_minutes: float = Field(default=60, gt=0)
+
     # --- Agendamento e retenção
     pipeline_interval_minutes: int = 5
     retention_days: int = 7
-    frame_retention_hours: int = 24
+    frame_retention_hours: int = Field(default=48, gt=0)
+    netcdf_retention_hours: int = Field(default=48, gt=0)
+    netcdf_dir: Path = Path("/data/netcdf")
 
 
 @lru_cache
